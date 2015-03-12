@@ -1,0 +1,70 @@
+clear all
+close all 
+clc
+[FileName,PathName]=uigetfile({'*.bmp;*.jpg;*.tif','All Image Files';'*.*','All Files'},...
+    'Select A Image','D:\baikundb\patch image model');
+if isequal(FileName,0)
+    disp('User Select Cancel');
+    break;
+else
+    disp(['User seletced ' fullfile(PathName,FileName)]);
+end
+
+SrcImage = imread(fullfile(PathName,FileName));
+if size(SrcImage,3)==3
+    SrcImage = rgb2gray(SrcImage);
+end
+[m,n] = size(SrcImage);
+
+Outbox = 18;
+PatchImage = [];
+Rect1 = imcrop(SrcImage,[1 1 Outbox Outbox]);
+Step = 5;
+l = 0;
+T1 = fix((m-Outbox)/Step);
+T2 = fix((n-Outbox)/Step);
+%imcrop 按照坐标轴来截取图像
+for j = 0:T1-1
+    for k =0:T2-1
+        RectImage = imcrop(SrcImage,[Step*k+1 Step*j+1 Outbox Outbox]);
+        Patch = RectImage';
+        PatchImage= [PatchImage Patch(:)];
+        l = l+1;
+    end
+end
+
+%solution via accelerated proximal gradient
+[h,w] = size(PatchImage);
+B1 = zeros(h,w);
+B0 = zeros(h,w);
+T1 = zeros(h,w);
+T0 = zeros(h,w);
+Alpha1 = 1;
+Alpha0 = 1;
+D = double(PatchImage);
+[~,S1,~] = svd(D);
+Mu0 = S1(2,2);
+Mub = 0.05*S1(4,4);
+Neta = 0.99;
+lambda = 1/sqrt(max(h,w));
+exp = 1;
+while exp > 0.5
+    Yb = B1 + (B1-B0)*(Alpha0-1)/Alpha1;
+    Yt = T1 + (T1-T0)*(Alpha0-1)/Alpha1;
+    Gb = Yb - 0.5*(Yb+Yt-D);
+    [U,S,V] = svd(Gb);
+    e = 0.5*max(Neta*Mu0,Mub);
+    S(S>e) = S(S>e) - e;
+    S(S<-e) = S(S<-e) + e;
+    S(S>=-e&S<=e) = 0;
+    Bt = U*S*V';
+    Gt = Yt - 0.5*(Yb+Yt-D);
+    e2 = e*lambda;
+    Gt(Gt>e2) = Gt(Gt>e2) - e2;
+    Gt(Gt<-e2) = Gt(Gt<-e2) + e2;
+    Gt(Gt>=-e2&Gt<=e2) = 0;
+    Alpha0 = Alpha1;
+    Alpha1 = (1+sqrt(4*Alpha1^2+1))/2;
+    Mu0 = max(Neta*Mu0,Mub);
+    exp = abs(Alpha1-Alpha0);
+end
